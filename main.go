@@ -7,6 +7,8 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	gogpt "github.com/sashabaranov/go-gpt3"
 )
@@ -23,12 +25,20 @@ func main() {
 	srv := fiber.New(fiber.Config{
 		CaseSensitive: true,
 	})
+	srv.Use(logger.New(logger.Config{
+		Output: os.Stderr,
+	}))
+	srv.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
 
 	app := NewApp()
 
-	srv.Post("/v1/chat", app.Chat)
-	srv.Delete("/v1/chat", app.DeleteConversation)
-	srv.Get("/v1/chat", app.GetRecord)
+	{
+		srv.Post("/v1/chat", app.Chat)
+		srv.Delete("/v1/chat", app.DeleteConversation)
+		srv.Get("/v1/chat", app.GetRecord)
+	}
 
 	go func() {
 		if err := srv.Listen(":3000"); err != nil {
@@ -112,6 +122,7 @@ func (a *App) Chat(c *fiber.Ctx) error {
 	conv.Listen(resp.Choices[0].Text)
 
 	return c.JSON(fiber.Map{
+		"prompt":       req.Prompt,
 		"message":      resp.Choices[0].Text,
 		"total_tokens": resp.Usage.TotalTokens,
 	})
