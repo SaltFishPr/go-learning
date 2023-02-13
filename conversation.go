@@ -3,15 +3,27 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/oklog/ulid/v2"
 )
+
+type Message struct {
+	ID        string `json:"id"`
+	Sender    string `json:"sender"`
+	Content   string `json:"content"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+type RecordI interface {
+	Add(message string, role string)
+	Count() int
+	Messages() []*Message
+	MessagesWithDepth(depth int) []*Message
+}
 
 type Conversation struct {
 	user         string
 	bot          string
 	promptPrefix string
-	history      *History
+	record       RecordI
 }
 
 type ConversationOption func(*Conversation)
@@ -27,7 +39,7 @@ func NewConversation(user string, bot string, opts ...ConversationOption) (*Conv
 		user:         user,
 		bot:          bot,
 		promptPrefix: fmt.Sprintf("%s: I am %s. You are %s.", user, user, bot),
-		history:      &History{},
+		record:       &Record{},
 	}
 	for _, opt := range opts {
 		opt(conv)
@@ -35,12 +47,12 @@ func NewConversation(user string, bot string, opts ...ConversationOption) (*Conv
 	return conv, nil
 }
 
-func WithPromptPrefix(promptPrefix ...string) ConversationOption {
+func WithTopic(topics ...string) ConversationOption {
 	return func(c *Conversation) {
 		var builder strings.Builder
-		for _, prefix := range promptPrefix {
+		for _, topic := range topics {
 			builder.WriteByte('\n')
-			builder.WriteString(prefix)
+			builder.WriteString(topic)
 		}
 		c.promptPrefix += builder.String()
 	}
@@ -59,7 +71,7 @@ func (c *Conversation) Say(message string) {
 	if message == "" {
 		return
 	}
-	c.history.Add(message, c.user)
+	c.record.Add(message, c.user)
 }
 
 func (c *Conversation) Listen(message string) {
@@ -67,87 +79,27 @@ func (c *Conversation) Listen(message string) {
 	if message == "" {
 		return
 	}
-	c.history.Add(message, c.bot)
+	c.record.Add(message, c.bot)
 }
 
-func (c *Conversation) GetRecord() string {
-	var builder strings.Builder
-	builder.WriteString(c.promptPrefix)
-	builder.WriteByte('\n')
-	for _, message := range c.history.Messages() {
-		builder.WriteString(message)
-		builder.WriteByte('\n')
-	}
-	return builder.String()
+func (c *Conversation) GetRecord() []*Message {
+	return c.record.Messages()
 }
 
-func (c *Conversation) GetPrompt() string {
-	const maxDepth = 5
+func (c *Conversation) GetPrompt(message string) string {
+	const maxDepth = 4
 
 	var builder strings.Builder
 	builder.WriteString(c.promptPrefix)
 	builder.WriteByte('\n')
-	messages := c.history.Messages()
-	if len(messages) > maxDepth {
-		messages = messages[len(messages)-maxDepth:]
-	}
+	messages := c.record.MessagesWithDepth(maxDepth)
 	for _, message := range messages {
-		builder.WriteString(message)
+		builder.WriteString(fmt.Sprintf("%s: %s", message.Sender, message.Content))
 		builder.WriteByte('\n')
 	}
-
+	builder.WriteString(fmt.Sprintf("%s: %s", c.user, message))
+	builder.WriteByte('\n')
 	builder.WriteString(c.bot)
 	builder.WriteString(": ")
 	return builder.String()
-}
-
-type History struct {
-	head   *HistoryNode
-	tail   *HistoryNode
-	length int
-}
-
-func (h *History) Add(message string, role string) {
-	if message == "" {
-		return
-	}
-
-	node := NewHistoryNode(message, role)
-	if h.head == nil {
-		h.head = node
-		h.tail = node
-	} else {
-		h.tail.next = node
-		node.prev = h.tail
-		h.tail = node
-	}
-	h.length++
-}
-
-func (h *History) Length() int {
-	return h.length
-}
-
-func (h *History) Messages() []string {
-	var messages []string
-	for node := h.head; node != nil; node = node.next {
-		messages = append(messages, fmt.Sprintf("%s: %s", node.role, node.message))
-	}
-	return messages
-}
-
-type HistoryNode struct {
-	id      string
-	role    string
-	message string
-	prev    *HistoryNode
-	next    *HistoryNode
-}
-
-func NewHistoryNode(message string, role string) *HistoryNode {
-	return &HistoryNode{
-		id:      ulid.Make().String(),
-		role:    role,
-		message: message,
-	}
 }

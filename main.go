@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/utils"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	gogpt "github.com/sashabaranov/go-gpt3"
 )
@@ -29,7 +28,7 @@ func main() {
 
 	srv.Post("/v1/chat", app.Chat)
 	srv.Delete("/v1/chat", app.DeleteConversation)
-	srv.Get("/v1/chat", app.GetConversation)
+	srv.Get("/v1/chat", app.GetRecord)
 
 	go func() {
 		if err := srv.Listen(":3000"); err != nil {
@@ -64,6 +63,10 @@ func NewApp() *App {
 	}
 }
 
+type ChatRequest struct {
+	Message string `json:"message"`
+}
+
 func (a *App) Chat(c *fiber.Ctx) error {
 	username := c.GetReqHeaders()["X-Username"]
 	if username == "" {
@@ -72,9 +75,16 @@ func (a *App) Chat(c *fiber.Ctx) error {
 		})
 	}
 
+	in := new(ChatRequest)
+	if err := c.BodyParser(in); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
 	conv, ok := a.convs.Get(username)
 	if !ok {
-		_conv, err := NewConversation(username, "Bot", WithPromptPrefix("Let's talk about something..."))
+		_conv, err := NewConversation(username, "Bot", WithTopic("Let's talk about something..."))
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": err.Error(),
@@ -84,11 +94,9 @@ func (a *App) Chat(c *fiber.Ctx) error {
 		conv = _conv
 	}
 
-	conv.Say(utils.CopyString(c.Query("message")))
-
 	req := gogpt.CompletionRequest{
 		Model:       gogpt.GPT3TextDavinci003,
-		Prompt:      conv.GetPrompt(),
+		Prompt:      conv.GetPrompt(in.Message),
 		MaxTokens:   MaxTokens,
 		Temperature: 0.4,
 		Stop:        []string{conv.User(), conv.Bot()},
@@ -100,6 +108,7 @@ func (a *App) Chat(c *fiber.Ctx) error {
 		})
 	}
 
+	conv.Say(in.Message)
 	conv.Listen(resp.Choices[0].Text)
 
 	return c.JSON(fiber.Map{
@@ -120,7 +129,7 @@ func (a *App) DeleteConversation(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (a *App) GetConversation(c *fiber.Ctx) error {
+func (a *App) GetRecord(c *fiber.Ctx) error {
 	username := c.GetReqHeaders()["X-Username"]
 	if username == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
