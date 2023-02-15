@@ -23,3 +23,6 @@ vendor/
 # OS General
 Thumbs.db
 .DS_Store
+
+# Project Specific
+bin

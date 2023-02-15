@@ -1,6 +1,5 @@
 # openai chat bot
 
-
 ## API
 
 - Chat
@@ -31,7 +30,15 @@ curl --request GET \
   --header 'X-Username: saltfishpr'
 ```
 
-## TODO
+## Build
 
-- custom prompt param
-- i18n support
+```shell
+docker buildx build --platform=linux/amd64,linux/arm64 --pull --tag saltfishpr/openai-chat:latest --tag saltfishpr/openai-chat:$(date '+%Y%m%d%H%M%S') . --push
+```
+
+
+## Deploy
+
+```shell
+docker run -p 3000:3000 -e OPENAI_API_KEY='token' --name openai-chat saltfishpr/openai-chat:latest
+```

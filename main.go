@@ -7,8 +7,10 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/utils"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	gogpt "github.com/sashabaranov/go-gpt3"
 )
@@ -22,22 +24,36 @@ func init() {
 }
 
 func main() {
+	app := NewApp()
+
 	srv := fiber.New(fiber.Config{
 		CaseSensitive: true,
 	})
+
+	srv.Static("/", "./dist", fiber.Static{
+		Compress: true,
+	})
+
 	srv.Use(logger.New(logger.Config{
 		Output: os.Stderr,
 	}))
 	srv.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 	}))
-
-	app := NewApp()
-
 	{
 		srv.Post("/v1/chat", app.Chat)
 		srv.Delete("/v1/chat", app.DeleteConversation)
 		srv.Get("/v1/chat", app.GetRecord)
+	}
+
+	groupX := srv.Group("/x")
+	groupX.Use(basicauth.New(basicauth.Config{
+		Users: map[string]string{
+			"admin": "123456",
+		},
+	}))
+	{
+		groupX.Get("/v1/conversations", app.GetConversations)
 	}
 
 	go func() {
@@ -78,7 +94,7 @@ type ChatRequest struct {
 }
 
 func (a *App) Chat(c *fiber.Ctx) error {
-	username := c.GetReqHeaders()["X-Username"]
+	username := getUsername(c)
 	if username == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "username is required",
@@ -129,7 +145,7 @@ func (a *App) Chat(c *fiber.Ctx) error {
 }
 
 func (a *App) DeleteConversation(c *fiber.Ctx) error {
-	username := c.GetReqHeaders()["X-Username"]
+	username := getUsername(c)
 	if username == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "username is required",
@@ -141,7 +157,7 @@ func (a *App) DeleteConversation(c *fiber.Ctx) error {
 }
 
 func (a *App) GetRecord(c *fiber.Ctx) error {
-	username := c.GetReqHeaders()["X-Username"]
+	username := getUsername(c)
 	if username == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "username is required",
@@ -158,4 +174,26 @@ func (a *App) GetRecord(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"record": conv.GetRecord(),
 	})
+}
+
+func (a *App) GetConversations(c *fiber.Ctx) error {
+	type _Conversation struct {
+		Name         string `json:"name"`
+		MessageCount int    `json:"message_count"`
+	}
+
+	conversations := make([]_Conversation, 0, a.convs.Count())
+	a.convs.IterCb(func(key string, v *Conversation) {
+		conversations = append(conversations, _Conversation{
+			Name:         key,
+			MessageCount: v.record.Count(),
+		})
+	})
+	return c.JSON(fiber.Map{
+		"conversations": conversations,
+	})
+}
+
+func getUsername(c *fiber.Ctx) string {
+	return utils.CopyString(c.GetReqHeaders()["X-Username"])
 }
