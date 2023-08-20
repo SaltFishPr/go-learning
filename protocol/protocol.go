@@ -21,17 +21,17 @@ var (
 type CompressType byte
 
 const (
-	// CompressNone does not compress.
-	CompressNone CompressType = iota
-	// Gzip uses gzip compression.
-	Gzip
+	// CompressTypeNone does not compress.
+	CompressTypeNone CompressType = iota
+	// CompressTypeGzip uses gzip compression.
+	CompressTypeGzip
 )
 
 func (t CompressType) String() string {
 	switch t {
-	case CompressNone:
+	case CompressTypeNone:
 		return "none"
-	case Gzip:
+	case CompressTypeGzip:
 		return "gzip"
 	default:
 		return "unknown"
@@ -42,21 +42,21 @@ func (t CompressType) String() string {
 type CodecType byte
 
 const (
-	// CodecNone uses raw []byte and don't serialize/deserialize
-	CodecNone CodecType = iota
-	// JSON for payload.
-	JSON
-	// ProtoBuffer for payload.
-	ProtoBuffer
+	// CodecTypeNone uses raw []byte and don't serialize/deserialize
+	CodecTypeNone CodecType = iota
+	// CodecTypeJSON for payload.
+	CodecTypeJSON
+	// CodecTypeProtoBuffer for payload.
+	CodecTypeProtoBuffer
 )
 
 func (t CodecType) String() string {
 	switch t {
-	case CodecNone:
+	case CodecTypeNone:
 		return "none"
-	case JSON:
+	case CodecTypeJSON:
 		return "json"
-	case ProtoBuffer:
+	case CodecTypeProtoBuffer:
 		return "protobuf"
 	default:
 		return "unknown"
@@ -73,20 +73,32 @@ func (h Header) Version() byte {
 	return h[1]
 }
 
-func (h Header) CompressType() byte {
-	return h[2] >> 4
+func (h Header) CompressType() CompressType {
+	return CompressType(h[2] >> 4)
 }
 
-func (h Header) CodecType() byte {
-	return h[2] & 0x0f
+func (h Header) CodecType() CodecType {
+	return CodecType(h[2] & 0x0f)
 }
 
 // Message .
 type Message struct {
-	Header        Header
+	Header        *Header
 	ServiceMethod string // format "Service.Method"
 	Metadata      map[string]string
 	Payload       []byte
+}
+
+func NewMessage() *Message {
+	header := Header([12]byte{})
+	header[0] = magicNumber
+	return &Message{
+		Header: &header,
+	}
+}
+
+func (m *Message) String() string {
+	return fmt.Sprintf("Header: %+v, ServiceMethod: %s, Metadata: %+v, Payload: %s", m.Header, m.ServiceMethod, m.Metadata, string(m.Payload))
 }
 
 func (m *Message) Decode(r io.Reader) error {

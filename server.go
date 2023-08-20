@@ -1,15 +1,15 @@
 package learning
 
 import (
+	"bufio"
+	"log"
 	"net"
 	"sync"
 
-	"learning/encoding"
+	"learning/protocol"
 )
 
-type serverOptions struct {
-	codec encoding.Codec
-}
+type serverOptions struct{}
 
 type ServerOption func(o *serverOptions)
 
@@ -42,6 +42,14 @@ var DefaultServer = NewServer()
 
 func (s *Server) ServeConn(conn net.Conn) {
 	defer conn.Close()
+
+	r := bufio.NewReader(conn)
+
+	m := protocol.NewMessage()
+	if err := m.Decode(r); err != nil {
+		log.Println(err)
+	}
+	log.Println(m)
 }
 
 // Accept accepts connections on the listener and serves requests
